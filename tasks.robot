@@ -1,5 +1,5 @@
 *** Settings ***
-# https://robotsparebinindustries.com/orders.csv
+# 
 Documentation     Orders robots from RobotSpareBin Industries Inc.\n\n
 ...               Saves the order HTML receipt as a PDF file.\n\n
 ...               Saves the screenshot of the ordered robot.\n\n
@@ -16,11 +16,11 @@ Suite Teardown    Cleaup
 ${out_dir}        ${CURDIR}${/}output
 ${screenshot_dir}    ${out_dir}${/}screenshots
 ${receipt_dir}    ${out_dir}${/}receipts
+${order_file_url}    https://robotsparebinindustries.com/orders.csv
 
 *** Tasks ***
 Order robots from RobotSpareBin Industries Inc
     Open order page
-    ${order_file_url} =    Request order file URL from user
     ${orders} =    Get orders    ${order_file_url}
     FOR    ${order}    IN    @{orders}
         Close modal
@@ -39,14 +39,6 @@ Open order page
     New Page    ${secret}[order_page_url]
     Wait For Elements State    ${order_page_submit_btn}    visible
     Wait For Elements State    ${modal_content}    visible
-
-Request order file URL from user
-    [Documentation]    Request the order file URL from the user using an input dialog
-    Add heading    Order file URL
-    Add text    Please provide the complete URL to the CSV file, which contains all the orders.
-    Add text input    url    label=URL for order file
-    ${input} =    Run dialog
-    [Return]    ${input.url}
 
 Close modal
     Click    ${cookies_accept_btn}
