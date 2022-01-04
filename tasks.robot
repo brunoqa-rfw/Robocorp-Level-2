@@ -1,118 +1,132 @@
 *** Settings ***
-Documentation     Orders robots from Robotsparebin Industries Inc.
-...               Saves the order HTML receipts as PDF files.
-...               Saves the screenshot of ordered robot.
-...               Embeds the screenshot of the robot to the PFD receipts.
-...               Creates zip archieve of the receipts and images.
-Library           RPA.Browser.Selenium    auto_close=${FALSE}
-Library           RPA.HTTP
-Library           RPA.Tables
-Library           RPA.PDF
-Library           RPA.Desktop
-Library           RPA.Cloud.AWS
-Library           RPA.Robocorp.WorkItems
-Library           RPA.Archive
-Library           OperatingSystem
-Library           RPA.Dialogs
-Library           RPA.Robocorp.Vault
+
+Documentation     Orders robots from RobotSpareBin Industries Inc.\n\n
+...               Saves the order HTML receipt as a PDF file.\n\n
+...               Saves the screenshot of the ordered robot.\n\n
+...               Embeds the screenshot of the robot to the PDF receipt.\n\n
+...               Creates ZIP archive of the receipts and the images.\n\n
+...               Removes all receipts and screenshot from output directory
+
+Resource          ./_resources/settings.robot
+Resource          ./_resources/page_objects/OrderPage.robot
+Resource          ./_resources/page_objects/CookiesDialog.robot
+
+Suite Setup       New Browser    chromium    headless=true
+Suite Teardown    Cleaup
+
 
 *** Variables ***
-${GLOBAL_RETRY_AMOUNT}=    10x
-${GLOBAL_RETRY_INTERVAL}=    0.5s
+
+${out_dir}           ${CURDIR}${/}output
+${screenshot_dir}    ${out_dir}${/}screenshots
+${receipt_dir}       ${out_dir}${/}receipts
+
 
 *** Tasks ***
-Order robots from RobotSparebin Industries Inc
-    Open robot order website
-    @{orders}=    Get orders
+
+Order robots from RobotSpareBin Industries Inc
+    Open order page
+    ${order_file_url} =    Request order file URL from user
+    ${orders} =    Get orders    ${order_file_url}
     FOR    ${order}    IN    @{orders}
-        Close the annoying modal
-        Fill the form    ${order}
-        Preview the robot
-        Submit the order
-        ${pdf}=    Store the receipt as PDF file    ${order}[Order number]
-        ${screenshot}=    Take a screenshot of the robot    ${order}[Order number]
-        Embed the robot screenshot to the receipt PDF file    ${order}[Order number]    ${screenshot}    ${pdf}
-        Go to order another robot
+        Close modal
+        Fill order form    ${order}
+        Preview robot
+        ${screenshot} =    Take screenshot of the robot image    ${order}[Order number]
+        Wait Until Keyword Succeeds    5x    0.5 sec    Submit order
+        Create receipt PDF with robot preview image    ${order}[Order number]    ${screenshot}
+        Order new robot
     END
-    ${zipfilename}=    Input zip name
-    Create a zip file of the receipts    ${zipfilename}
-    Success dialog
-    [Teardown]    Close Browser
+    Create ZIP file of all receipts
+
 
 *** Keywords ***
-Open robot order website
-    ${secret}=    Get Secret    order_vault
-    Open Available Browser    ${secret}[site-url]
-    #Open Available Browser    https://robotsparebinindustries.com/#/robot-order
 
-Close the annoying modal
-    Click Button    OK
+Open order page
+    ${secret} =    Get Secret    urls
+    New Page    ${secret}[order_page_url]
+    Wait For Elements State    ${order_page_submit_btn}    visible
+    Wait For Elements State    ${modal_content}            visible
+
+
+Request order file URL from user
+    [Documentation]    Request the order file URL from the user using an input dialog
+    Add heading        Order file URL
+    Add text           Please provide the complete URL to the CSV file, which contains all the orders.
+    Add text input     url    label=URL for order file
+    ${input} =         Run dialog
+    [Return]           ${input.url}
+
+
+Close modal
+    Click    ${cookies_accept_btn}
+    Wait For Elements State    ${modal_content}    hidden
+
 
 Get orders
-    Download    https://robotsparebinindustries.com/orders.csv    overwrite=True
-    @{orders}=    Read table from CSV    orders.csv    header=True
-    [Return]    @{orders}
+    [Documentation]    Download the order CSV file, read it into table
+    [Arguments]        ${order_file_url}
+    RPA.HTTP.Download    ${order_file_url}    overwrite=true
+    ${orders} =    Read table from CSV    orders.csv
+    [Return]    ${orders}
 
-Fill the form
-    [Arguments]    ${order}
-    Select From List By Value    head    ${order}[Head]
-    Select Radio Button    body    ${order}[Body]
-    Input Text    xpath:/html/body/div/div/div[1]/div/div[1]/form/div[3]/input    ${order}[Legs]
-    Input Text    id:address    ${order}[Address]
 
- Preview the robot
-    Click Button    preview
+Fill order form
+    [Arguments]    ${order_table_row}
+    OrderPage.Fill in order parameters    ${order_table_row}
 
-Submit the order
-    Wait Until Keyword Succeeds    ${GLOBAL_RETRY_AMOUNT}    ${GLOBAL_RETRY_INTERVAL}    Submit Robot Order
 
-Submit Robot Order
-    Click Button    id:order
-    Wait Until Page Contains Element    id:order-completion
+Preview robot
+    Click    ${order_page_preview_btn}
+    Wait For Elements State    ${order_page_robot_preview_image}    visible
 
-Store the receipt as PDF file
-    [Arguments]    ${order}
-    Wait Until Element Is Visible    id:receipt    timeout=30
-    ${order_receipt}=    Get Element Attribute    id:receipt    outerHTML
-    Html To Pdf    ${order_receipt}    ${OUTPUT_DIR}${/}receipt${/}${order}.pdf
-    [Return]    ${OUTPUT_DIR}${/}receipt${/}${order}.pdf
 
-Take a screenshot of the robot
-    [Arguments]    ${order}
-    Wait Until Element Is Visible    id:robot-preview-image
-    Wait Until Element Is Visible    xpath:/html/body/div/div/div[1]/div/div[2]/div/div/img[1]
-    Wait Until Element Is Visible    xpath:/html/body/div/div/div[1]/div/div[2]/div/div/img[2]
-    Wait Until Element Is Visible    xpath:/html/body/div/div/div[1]/div/div[2]/div/div/img[3]
-    Capture Element Screenshot    id:robot-preview-image    ${OUTPUT_DIR}${/}screenshot${/}${order}.PNG
-    [Return]    ${OUTPUT_DIR}${/}screenshot${/}${order}.PNG
+Take screenshot of the robot image
+    [Arguments]    ${order_number}
+    Set Local Variable    ${file_path}    ${screenshot_dir}${/}robot_preview_image_${order_number}.png
+    Take Screenshot    filename=${file_path}    selector=${order_page_robot_preview_image}    fullPage=False    timeout=2
+    [Return]    ${file_path}
 
-Embed the robot screenshot to the receipt PDF file
-    [Arguments]    ${order}    ${screenshot}    ${pdf}
+
+Submit order
+    Click    ${order_page_submit_btn}
+    Wait For Elements State    ${order_page_receipt_alert}        visible
+    Wait For Elements State    ${order_page_order_another_btn}    visible
+
+
+Store order receipt as PDF file
+    [Arguments]    ${order_number}
+    ${receipt_html} =    Get Property    ${order_page_receipt_alert}    outerHTML
+    Set Local Variable    ${file_path}    ${receipt_dir}${/}receipt_${order_number}.pdf
+    Html To Pdf    ${receipt_html}    ${file_path}
+    [Return]    ${file_path}
+
+
+Embed robot preview screenshot to receipt PDF file
+    [Arguments]    ${screenshot}    ${pdf}
     Open Pdf    ${pdf}
-    ${file}=    Create List
-    ...    ${screenshot}
-    Add Files To Pdf    ${file}    ${pdf}    append=true
-    Close All Pdfs
+    ${image_files} =    Create List    ${screenshot}:align=center
+    Add Files To PDF    ${image_files}    ${pdf}    append=True
+    Close Pdf    ${pdf}
 
-Go to order another robot
-    Click Button When Visible    id:order-another
 
-Create a zip file of the receipts
-    [Arguments]    ${zip}
-    Archive Folder With Zip
-    ...    ${OUTPUT_DIR}${/}receipt
-    ...    ${OUTPUT_DIR}${/}${zip}.zip
-    Empty Directory    ${OUTPUT_DIR}${/}receipt
-    Empty Directory    ${OUTPUT_DIR}${/}screenshot
+Create receipt PDF with robot preview image
+    [Arguments]    ${order_number}    ${screenshot}
+    ${pdf} =    Store order receipt as PDF file    ${order_number}
+    Embed robot preview screenshot to receipt PDF file    ${screenshot}    ${pdf}
 
-Success dialog
-    Add icon    Success
-    Add heading    Your orders have been processed
-    Add files    *.zip
-    Run dialog    title=Success
 
-Input zip name
-    Add heading    Zip file name
-    Add text input    zipfilename    label=File name    placeholder=Enter zip filename
-    ${result}=    Run dialog
-    [Return]    ${result.zipfilename}
+Order new robot
+    Click    ${order_page_order_another_btn}
+    Wait For Elements State    ${order_page_submit_btn}    visible
+
+
+Create ZIP file of all receipts
+    ${zip_file_name} =    Set Variable    ${out_dir}${/}all_receipts.zip
+    Archive Folder With Zip    ${receipt_dir}    ${zip_file_name}
+
+
+Cleaup
+    RPA.Browser.Playwright.Close Browser
+    Remove Directory    ${screenshot_dir}    recursive=True
+    Remove Directory    ${receipt_dir}       recursive=True
