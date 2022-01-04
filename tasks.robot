@@ -9,7 +9,7 @@ Documentation     Orders robots from RobotSpareBin Industries Inc.\n\n
 Resource          ./_resources/settings.robot
 Resource          ./_resources/page_objects/OrderPage.robot
 Resource          ./_resources/page_objects/CookiesDialog.robot
-Suite Setup       New Browser    chromium    headless=false
+Suite Setup       New Browser    chromium    headless=True
 Suite Teardown    Cleaup
 
 *** Variables ***
